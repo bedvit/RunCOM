@@ -45,6 +45,57 @@ HRESULT AutoWrap(int autoType, VARIANT* pvResult, IDispatch* pDisp, const wchar_
     return hr;
 }
 
+HRESULT RunComNotATLvBSTR()
+{
+    IDispatchPtr pBedvitComVBADisp = NULL;
+    HRESULT hr = 0;
+    GUID guid;
+    hr = IIDFromString(L"{7a65494f-2a91-415c-9ff6-38f6611675ce}", &guid);//IVBA
+    if (FAILED(hr)) {
+        return hr;
+    }
+    hr = CoCreateInstance(guid, NULL, CLSCTX_INPROC_SERVER, IID_IDispatch, (void**)&pBedvitComVBADisp);
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    //переменные, создаем массив
+    _variant_t result, array, disp(pBedvitComVBADisp.GetInterfacePtr());
+    SAFEARRAYBOUND bound[2] = { { 3, 1 }, { 2, 1 } }; //3строки, 2 столбца
+    array.vt = VT_ARRAY | VT_BSTR; // array of Variants
+    array.parray = SafeArrayCreate(VT_BSTR, 2, bound);
+    if (!array.parray) {
+        return E_POINTER;
+    }
+
+    //заполним массив
+    BSTR* arr = NULL;
+    hr = SafeArrayAccessData(array.parray, (void HUGEP**) & arr);//открываем массив
+    if (FAILED(hr)) {
+        return hr;
+    }
+    arr[0] = _bstr_t(L"C").Detach();
+    arr[1] = _bstr_t(L"B").Detach();
+    arr[2] = _bstr_t(L"A").Detach();
+
+    hr = SafeArrayUnaccessData(array.parray); //закрываем массив
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    //оборачиваем массив в VT_BYREF, что бы получить результат из метода [in, out]
+    VARIANT pvarArray;
+    pvarArray.vt = VT_VARIANT | VT_BYREF;
+    pvarArray.pvarVal = &array;
+
+    //сортируем//до сортировки 1й столбец (C, B, A)//после сортировки 1й столбец (A, B, C) 
+    hr = AutoWrap(DISPATCH_METHOD, &result, disp.pdispVal, L"ArraySortS", 1, pvarArray);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    return 0;
+}
+
 HRESULT RunComNotATL()
 {
     IDispatchPtr pBedvitComVBADisp = NULL;
@@ -160,7 +211,15 @@ int main()
         return hr;
     }
 
-    //вариант без ATL
+    //вариант без ATL массив VARIANT
+    hr = RunComNotATLvBSTR();
+    if (FAILED(hr)) {
+        MessageBoxW(NULL, _com_error(hr).ErrorMessage(), L"Error", MB_ICONERROR | MB_TOPMOST);
+        OleUninitialize();
+        return hr;
+    }
+
+    //вариант без ATL массив BSTR
     hr = RunComNotATL();
     if (FAILED(hr)) {
         MessageBoxW(NULL, _com_error(hr).ErrorMessage(), L"Error", MB_ICONERROR | MB_TOPMOST);
