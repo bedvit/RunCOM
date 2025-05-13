@@ -5,9 +5,8 @@
 
 //COM
 #include "comdef.h"
-#include <atlsafe.h>
 #include "oleacc.h"
-
+#include <atlsafe.h> //ATL
 
 HRESULT AutoWrap(int autoType, VARIANT* pvResult, IDispatch* pDisp, const wchar_t* ptName, int cArgs...) {
     va_list marker;// Begin variable-argument list...
@@ -46,6 +45,56 @@ HRESULT AutoWrap(int autoType, VARIANT* pvResult, IDispatch* pDisp, const wchar_
     return hr;
 }
 
+HRESULT RunComNotATL()
+{
+    IDispatchPtr pBedvitComVBADisp = NULL;
+    HRESULT hr = 0;
+    GUID guid;
+    hr = IIDFromString(L"{7a65494f-2a91-415c-9ff6-38f6611675ce}", &guid);//IVBA
+    if (FAILED(hr)) {
+        return hr;
+    }
+    hr = CoCreateInstance(guid, NULL, CLSCTX_INPROC_SERVER, IID_IDispatch, (void**)&pBedvitComVBADisp);
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    //переменные, создаем массив
+    _variant_t result, array, disp(pBedvitComVBADisp);
+	SAFEARRAYBOUND bound[2] = { { 3, 1 }, { 2, 1 } }; //3строки, 2 столбца
+    array.vt = VT_ARRAY | VT_VARIANT; // array of Variants
+    array.parray = SafeArrayCreate(VT_VARIANT, 2, bound);
+	if (!array.parray) {
+		return E_POINTER;
+	}
+
+    //заполним массив
+    VARIANT* arr = NULL;
+    hr = SafeArrayAccessData(array.parray, (void HUGEP**) & arr);//открываем массив
+    if (FAILED(hr)) {
+        return hr;
+    }
+    arr[0] = _variant_t(L"C").Detach();
+    arr[1] = _variant_t(L"B").Detach();
+    arr[2] = _variant_t(L"A").Detach();
+    hr = SafeArrayUnaccessData(array.parray); //закрываем массив
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    //оборачиваем массив в VT_BYREF, что бы получить результат из метода [in, out]
+    VARIANT pvarArray;
+    pvarArray.vt = VT_VARIANT | VT_BYREF;
+    pvarArray.pvarVal = &array;
+
+    //сортируем//до сортировки 1й столбец (C, B, A)//после сортировки 1й столбец (A, B, C) 
+    hr = AutoWrap(DISPATCH_METHOD, &result, disp.pdispVal, L"ArraySortV", 1, pvarArray);
+    if (FAILED(hr)) {
+        return hr;
+    }
+    return 0;
+}
+
 HRESULT RunCom()
 {
     CComPtr <IDispatch> pBedvitComVBADisp = NULL;
@@ -81,7 +130,7 @@ HRESULT RunCom()
     if (FAILED(hr)) {
         return hr;
     }
-    ATL::CComVariant(L"A").Detach(&arr[0]);
+    ATL::CComVariant(L"C").Detach(&arr[0]);
     ATL::CComVariant(L"B").Detach(&arr[1]);
     ATL::CComVariant(L"A").Detach(&arr[2]);
     hr = SafeArrayUnaccessData(array.parray); //закрываем массив
@@ -94,14 +143,13 @@ HRESULT RunCom()
     pvarArray.vt = VT_VARIANT | VT_BYREF;
     pvarArray.pvarVal = &array;
 
-    //сортируем//до сортировки 1й столбец (A, B, A)//после сортировки 1й столбец (A, A, B) 
+    //сортируем//до сортировки 1й столбец (C, B, A)//после сортировки 1й столбец (A, B, C) 
     hr = AutoWrap(DISPATCH_METHOD, &result, disp.pdispVal, L"ArraySortV", 1, pvarArray);
     if (FAILED(hr)) {
         return hr;
     }
     return 0;
 }
-
 
 int main()
 {
@@ -111,10 +159,19 @@ int main()
         MessageBoxW(NULL, _com_error(hr).ErrorMessage(), L"Error", MB_ICONERROR | MB_TOPMOST);
         return hr;
     }
+
+    //вариант без ATL
+    hr = RunComNotATL();
+    if (FAILED(hr)) {
+        MessageBoxW(NULL, _com_error(hr).ErrorMessage(), L"Error", MB_ICONERROR | MB_TOPMOST);
+        OleUninitialize();
+        return hr;
+    }
+
+    //вариант с ATL
     hr = RunCom();
     if (FAILED(hr)) {
         MessageBoxW(NULL, _com_error(hr).ErrorMessage(), L"Error", MB_ICONERROR | MB_TOPMOST);
-        //return hr;
     }
     OleUninitialize();
     return hr;
